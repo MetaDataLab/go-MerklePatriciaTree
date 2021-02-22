@@ -5,16 +5,19 @@ import (
 	fmt "fmt"
 
 	"github.com/golang/protobuf/proto"
-	"github.com/zllai/go-MerklePatriciaTree/kvstore"
-	"golang.org/x/crypto/sha3"
+
+	"github.com/tokentransfer/go-MerklePatriciaTree/pb"
+
+	libcrypto "github.com/tokentransfer/interfaces/crypto"
+	libstore "github.com/tokentransfer/interfaces/store"
 )
 
 type (
 	Node interface {
-		Hash() []byte
+		Hash(libcrypto.CryptoService) []byte
 		CachedHash() []byte
-		Serialize() []byte
-		Save(kvstore.KVStore)
+		Serialize(libcrypto.CryptoService) ([]byte, error)
+		Save(libstore.KvService, libcrypto.CryptoService) error
 	}
 	FullNode struct {
 		Children [257]Node
@@ -40,14 +43,14 @@ func (n *ShortNode) CachedHash() []byte { return n.cache }
 func (n *ValueNode) CachedHash() []byte { return n.cache }
 func (n *HashNode) CachedHash() []byte  { return []byte(*n) }
 
-func DeserializeNode(data []byte) (Node, error) {
-	persistNode := &PersistNode{}
+func DeserializeNode(cs libcrypto.CryptoService, data []byte) (Node, error) {
+	persistNode := &pb.PersistNode{}
 	err := proto.Unmarshal(data, persistNode)
 	if err != nil {
-		return nil, errors.New(fmt.Sprintf("[Node] cannot deserialize persist node: %s", err.Error()))
+		return nil, fmt.Errorf("[Node] cannot deserialize persist node: %s", err.Error())
 	}
 	switch v := persistNode.Content.(type) {
-	case *PersistNode_Full:
+	case *pb.PersistNode_Full:
 		fullNode := FullNode{}
 		for i := 0; i < len(fullNode.Children); i++ {
 			if len(v.Full.Children[i]) != 0 {
@@ -58,10 +61,13 @@ func DeserializeNode(data []byte) (Node, error) {
 				}
 			}
 		}
-		hash := sha3.Sum256(data)
+		hash, err := cs.Hash(data)
+		if err != nil {
+			return nil, err
+		}
 		fullNode.cache = hash[:]
 		return &fullNode, nil
-	case *PersistNode_Short:
+	case *pb.PersistNode_Short:
 		shortNode := ShortNode{}
 		shortNode.Key = v.Short.Key
 		if len(v.Short.Value) == 0 {
@@ -69,96 +75,120 @@ func DeserializeNode(data []byte) (Node, error) {
 		}
 		child := HashNode(v.Short.Value)
 		shortNode.Value = &child
-		hash := sha3.Sum256(data)
+		hash, err := cs.Hash(data)
+		if err != nil {
+			return nil, err
+		}
 		shortNode.cache = hash[:]
 		return &shortNode, nil
-	case *PersistNode_Value:
-		hash := sha3.Sum256(data)
+	case *pb.PersistNode_Value:
+		hash, err := cs.Hash(data)
+		if err != nil {
+			return nil, err
+		}
 		ret := ValueNode{v.Value, hash[:], false}
 		return &ret, nil
 	}
 	return nil, errors.New("[Node] Unknown node type")
 }
 
-func (vn *ValueNode) Serialize() []byte {
-	persistValueNode := PersistNode_Value{}
+func (vn *ValueNode) Serialize(cs libcrypto.CryptoService) ([]byte, error) {
+	persistValueNode := pb.PersistNode_Value{}
 	persistValueNode.Value = vn.Value
-	persistNode := PersistNode{
+	persistNode := pb.PersistNode{
 		Content: &persistValueNode,
 	}
 	data, _ := proto.Marshal(&persistNode)
-	hash := sha3.Sum256(data)
+	hash, err := cs.Hash(data)
+	if err != nil {
+		return nil, err
+	}
 	vn.cache = hash[:]
 	vn.dirty = false
-	return data
+	return data, nil
 }
 
-func (vn *ValueNode) Hash() []byte {
+func (vn *ValueNode) Hash(cs libcrypto.CryptoService) []byte {
 	if vn.dirty {
-		vn.Serialize()
+		vn.Serialize(cs)
 	}
 	return vn.cache
 }
 
-func (vn *ValueNode) Save(kv kvstore.KVStore) {
-	data := vn.Serialize()
-	kv.Put(vn.cache, data)
+func (vn *ValueNode) Save(kv libstore.KvService, cs libcrypto.CryptoService) error {
+	data, err := vn.Serialize(cs)
+	if err != nil {
+		return err
+	}
+	return kv.PutData(vn.cache, data)
 }
 
-func (fn *FullNode) Serialize() []byte {
-	persistFullNode := PersistFullNode{}
+func (fn *FullNode) Serialize(cs libcrypto.CryptoService) ([]byte, error) {
+	persistFullNode := pb.PersistFullNode{}
 	persistFullNode.Children = make([][]byte, 257)
 	for i := 0; i < len(fn.Children); i++ {
 		if fn.Children[i] != nil {
-			persistFullNode.Children[i] = fn.Children[i].Hash()
+			persistFullNode.Children[i] = fn.Children[i].Hash(cs)
 		}
 	}
-	data, _ := proto.Marshal(&PersistNode{
-		Content: &PersistNode_Full{Full: &persistFullNode},
+	data, _ := proto.Marshal(&pb.PersistNode{
+		Content: &pb.PersistNode_Full{Full: &persistFullNode},
 	})
-	hash := sha3.Sum256(data)
+	hash, err := cs.Hash(data)
+	if err != nil {
+		return nil, err
+	}
 	fn.cache = hash[:]
 	fn.dirty = false
-	return data
+	return data, nil
 }
 
-func (fn *FullNode) Hash() []byte {
+func (fn *FullNode) Hash(cs libcrypto.CryptoService) []byte {
 	if fn.dirty {
-		fn.Serialize()
+		fn.Serialize(cs)
 	}
 	return fn.cache
 }
 
-func (fn *FullNode) Save(kv kvstore.KVStore) {
-	data := fn.Serialize()
-	kv.Put(fn.cache, data)
+func (fn *FullNode) Save(kv libstore.KvService, cs libcrypto.CryptoService) error {
+	data, err := fn.Serialize(cs)
+	if err != nil {
+		return err
+	}
+	return kv.PutData(fn.cache, data)
 }
 
-func (sn *ShortNode) Serialize() []byte {
-	persistShortNode := PersistShortNode{}
+func (sn *ShortNode) Serialize(cs libcrypto.CryptoService) ([]byte, error) {
+	persistShortNode := pb.PersistShortNode{}
 	persistShortNode.Key = sn.Key
-	persistShortNode.Value = sn.Value.Hash()
-	data, _ := proto.Marshal(&PersistNode{
-		Content: &PersistNode_Short{Short: &persistShortNode},
+	persistShortNode.Value = sn.Value.Hash(cs)
+	data, _ := proto.Marshal(&pb.PersistNode{
+		Content: &pb.PersistNode_Short{Short: &persistShortNode},
 	})
-	hash := sha3.Sum256(data)
+	hash, err := cs.Hash(data)
+	if err != nil {
+		return nil, err
+	}
 	sn.cache = hash[:]
 	sn.dirty = false
-	return data
+	return data, nil
 }
 
-func (sn *ShortNode) Hash() []byte {
+func (sn *ShortNode) Hash(cs libcrypto.CryptoService) []byte {
 	if sn.dirty {
-		sn.Serialize()
+		sn.Serialize(cs)
 	}
 	return sn.cache
 }
 
-func (sn *ShortNode) Save(kv kvstore.KVStore) {
-	data := sn.Serialize()
-	kv.Put(sn.cache, data)
+func (sn *ShortNode) Save(kv libstore.KvService, cs libcrypto.CryptoService) error {
+	data, err := sn.Serialize(cs)
+	if err != nil {
+		return err
+	}
+	return kv.PutData(sn.cache, data)
 }
 
-func (hn *HashNode) Hash() []byte            { return []byte(*hn) }
-func (hn *HashNode) Serialize() []byte       { return nil }
-func (hn *HashNode) Save(kv kvstore.KVStore) {}
+func (hn *HashNode) Hash(libcrypto.CryptoService) []byte                          { return []byte(*hn) }
+func (hn *HashNode) Serialize(libcrypto.CryptoService) ([]byte, error)            { return nil, nil }
+func (hn *HashNode) Save(kv libstore.KvService, cs libcrypto.CryptoService) error { return nil }

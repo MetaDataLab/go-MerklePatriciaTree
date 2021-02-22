@@ -1,3 +1,6 @@
+# Announcement
+forked and modified for part of the [#chain](http://github.com/tokentransfer/chain)
+
 # Go-MerklePatriciaTree
 This is a go implementation of Merkle Patricia Tree (MPT) similar to that used in go-Ethereum. The reason for re-implementing it is to ease the adoption in other projects, as the MPT in go-Ethereum is coupled with other Ethereum modules and its interface is not clean.
 

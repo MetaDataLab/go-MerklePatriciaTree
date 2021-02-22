@@ -1,5 +1,7 @@
 syntax = "proto3";
-package mpt;
+package pb;
+
+option go_package = ".;pb";
 
 message PersistNode {
     oneof Content {
@@ -8,9 +10,11 @@ message PersistNode {
         bytes value = 3;
     }
 }
+
 message PersistFullNode {
     repeated bytes Children= 1;
 }
+
 message PersistShortNode {
     bytes Key = 1;
     bytes value = 2;

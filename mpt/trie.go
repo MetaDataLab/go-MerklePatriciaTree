@@ -8,26 +8,45 @@ import (
 	"sync"
 
 	"github.com/golang/protobuf/proto"
-	"github.com/zllai/go-MerklePatriciaTree/kvstore"
+
+	"github.com/tokentransfer/go-MerklePatriciaTree/pb"
+
+	libcrypto "github.com/tokentransfer/interfaces/crypto"
+	libstore "github.com/tokentransfer/interfaces/store"
 )
+
+var once = &sync.Once{}
+var zero []byte
 
 type Trie struct {
 	oldRoot []byte
 	root    Node
-	kv      kvstore.KVStore
+	kv      libstore.KvService
+	cs      libcrypto.CryptoService
 	lock    *sync.RWMutex
 }
 
-func New(root Node, kv kvstore.KVStore) *Trie {
+func New(cs libcrypto.CryptoService, kv libstore.KvService) *Trie {
+	once.Do(func() {
+		zero = libcrypto.ZeroHash(cs)
+	})
+
 	var oldRoot []byte = nil
+	var root Node = nil
+	rootHash, _ := kv.GetData(zero)
+	if len(rootHash) > 0 {
+		r := HashNode(rootHash)
+		root = &r
+	}
 	if root != nil {
-		root.Serialize() // update cached hash
+		root.Serialize(cs) // update cached hash
 		oldRoot = root.CachedHash()
 	}
 	return &Trie{
 		oldRoot: oldRoot,
 		root:    root,
 		kv:      kv,
+		cs:      cs,
 		lock:    &sync.RWMutex{},
 	}
 }
@@ -44,55 +63,55 @@ func (t *Trie) Get(key []byte) ([]byte, error) {
 	} else if v, ok := node.(*ValueNode); ok {
 		return []byte(v.Value), nil
 	} else {
-		return nil, errors.New(fmt.Sprintf("[Trie] key not found: %s", hex.EncodeToString(key)))
+		return nil, fmt.Errorf("[Trie] key not found: %s", hex.EncodeToString(key))
 	}
 }
 
 func (t *Trie) get(node Node, key []byte, prefixLen int) (Node, Node, error) {
 	if node == nil {
-		return nil, node, errors.New(fmt.Sprintf("[Trie] key not found: %s", hex.EncodeToString(key)))
+		return nil, node, fmt.Errorf("[Trie] key not found: %s", hex.EncodeToString(key))
 	}
 	switch n := node.(type) {
 	case *FullNode:
 		if prefixLen > len(key) {
-			return nil, node, errors.New(fmt.Sprintf("[Trie] key not found: %s", hex.EncodeToString(key)))
+			return nil, node, fmt.Errorf("[Trie] key not found: %s", hex.EncodeToString(key))
 		}
 		if prefixLen == len(key) {
 			valueNode, newNode, err := t.get(n.Children[256], key, prefixLen)
 			n.Children[256] = newNode
 			return valueNode, node, err
-		} else {
-			valueNode, newNode, err := t.get(n.Children[key[prefixLen]], key, prefixLen+1)
-			n.Children[key[prefixLen]] = newNode
-			return valueNode, node, err
 		}
+
+		valueNode, newNode, err := t.get(n.Children[key[prefixLen]], key, prefixLen+1)
+		n.Children[key[prefixLen]] = newNode
+		return valueNode, node, err
 	case *ShortNode:
 		if len(key)-prefixLen < len(n.Key) || !bytes.Equal(n.Key, key[prefixLen:prefixLen+len(n.Key)]) {
-			return nil, node, errors.New(fmt.Sprintf("[Trie] key not found: %s", hex.EncodeToString(key)))
+			return nil, node, fmt.Errorf("[Trie] key not found: %s", hex.EncodeToString(key))
 		}
 		valueNode, newNode, err := t.get(n.Value, key, prefixLen+len(n.Key))
 		n.Value = newNode
 		return valueNode, node, err
 	case *HashNode:
-		data, err := t.kv.Get([]byte(*n))
+		data, err := t.kv.GetData([]byte(*n))
 		if err != nil {
 			return nil, node, err
 		}
-		loadedNode, err := DeserializeNode(data)
+		loadedNode, err := DeserializeNode(t.cs, data)
 		if err != nil {
-			return nil, node, errors.New(fmt.Sprintf("[Trie] Cannot load node: %s", err.Error()))
+			return nil, node, fmt.Errorf("[Trie] Cannot load node: %s", err.Error())
 		}
-		if !bytes.Equal([]byte(*n), loadedNode.Hash()) {
-			return nil, node, errors.New(fmt.Sprintf("[Trie] Cannot load node: hash does not match"))
+		if !bytes.Equal([]byte(*n), loadedNode.Hash(t.cs)) {
+			return nil, node, fmt.Errorf("[Trie] Cannot load node: hash does not match")
 		}
 		valueNode, loadedNode, err := t.get(loadedNode, key, prefixLen)
 		return valueNode, loadedNode, err
 	case *ValueNode:
 		if prefixLen == len(key) {
 			return node, node, nil
-		} else {
-			return nil, node, errors.New(fmt.Sprintf("[Trie] key not found: %s", hex.EncodeToString(key)))
 		}
+
+		return nil, node, fmt.Errorf("[Trie] key not found: %s", hex.EncodeToString(key))
 	}
 	return nil, node, errors.New("[Tire] Unknown node type")
 }
@@ -127,7 +146,7 @@ func (t *Trie) put(node Node, key []byte, value Node, prefixLen int) (Node, erro
 	case *FullNode:
 		n.dirty = true
 		if prefixLen > len(key) {
-			return node, errors.New(fmt.Sprintf("[Trie] Cannot insert"))
+			return node, fmt.Errorf("[Trie] Cannot insert")
 		} else if prefixLen == len(key) {
 			n.Children[256] = value
 			return n, nil
@@ -142,7 +161,7 @@ func (t *Trie) put(node Node, key []byte, value Node, prefixLen int) (Node, erro
 	case *ShortNode:
 		n.dirty = true
 		if prefixLen > len(key) {
-			return node, errors.New(fmt.Sprintf("[Trie] Cannot insert"))
+			return node, fmt.Errorf("[Trie] Cannot insert")
 		}
 		commonLen := commonPrefix(n.Key, key[prefixLen:])
 		if commonLen == len(n.Key) {
@@ -168,9 +187,8 @@ func (t *Trie) put(node Node, key []byte, value Node, prefixLen int) (Node, erro
 			shortNode.Key = n.Key[:commonLen]
 			shortNode.Value = newNode
 			return &shortNode, nil
-		} else {
-			return newNode, nil
 		}
+		return newNode, nil
 	case *ValueNode:
 		n.dirty = true
 		if prefixLen == len(key) {
@@ -179,25 +197,25 @@ func (t *Trie) put(node Node, key []byte, value Node, prefixLen int) (Node, erro
 			fullNode := &FullNode{dirty: true}
 			newNode, err := t.put(fullNode, key, value, prefixLen)
 			if err != nil {
-				return node, errors.New(fmt.Sprintf("[Trie] Cannot insert"))
+				return node, fmt.Errorf("[Trie] Cannot insert")
 			}
 			newNode, err = t.put(newNode, key[:prefixLen], node, prefixLen)
 			if err != nil {
-				return node, errors.New(fmt.Sprintf("[Trie] Cannot insert"))
+				return node, fmt.Errorf("[Trie] Cannot insert")
 			}
 			return newNode, nil
 		} else {
-			return node, errors.New(fmt.Sprintf("[Trie] Cannot insert"))
+			return node, fmt.Errorf("[Trie] Cannot insert")
 		}
 	case *HashNode:
-		if prefixLen >= len(key) {
-			return node, errors.New(fmt.Sprintf("[Trie] Cannot insert"))
+		if prefixLen > len(key) {
+			return node, fmt.Errorf("[Trie] Cannot insert")
 		}
-		data, err := t.kv.Get([]byte(*n))
+		data, err := t.kv.GetData([]byte(*n))
 		if err != nil {
 			return node, err
 		}
-		newNode, err := DeserializeNode(data)
+		newNode, err := DeserializeNode(t.cs, data)
 		if err != nil {
 			return node, err
 		}
@@ -207,7 +225,7 @@ func (t *Trie) put(node Node, key []byte, value Node, prefixLen int) (Node, erro
 		}
 		return newNode, nil
 	}
-	return node, errors.New(fmt.Sprintf("[Trie] Cannot insert"))
+	return node, fmt.Errorf("[Trie] Cannot insert")
 }
 
 func commonPrefix(a, b []byte) int {
@@ -226,14 +244,26 @@ func commonPrefix(a, b []byte) int {
 	return ret
 }
 
-func (t *Trie) Commit() {
+func (t *Trie) Commit() error {
 	t.lock.Lock()
 	defer t.lock.Unlock()
 	if t.root == nil {
-		return
+		err := t.kv.RemoveData(zero)
+		if err != nil {
+			return err
+		}
+		return nil
 	}
 	t.commit(t.root)
-	t.oldRoot = t.root.CachedHash()
+	h := t.root.CachedHash()
+	t.oldRoot = h
+
+	hn := HashNode(h)
+	err := t.kv.PutData(zero, hn)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func (t *Trie) commit(node Node) {
@@ -242,16 +272,16 @@ func (t *Trie) commit(node Node) {
 		for i := 0; i < len(n.Children); i++ {
 			t.commit(n.Children[i])
 		}
-		n.Save(t.kv)
+		n.Save(t.kv, t.cs)
 	case *ShortNode:
 		t.commit(n.Value)
-		n.Save(t.kv)
+		n.Save(t.kv, t.cs)
 	case *ValueNode:
-		n.Save(t.kv)
+		n.Save(t.kv, t.cs)
 	}
 }
 
-func (t *Trie) Abort() {
+func (t *Trie) Abort() error {
 	t.lock.Lock()
 	defer t.lock.Unlock()
 	if t.oldRoot == nil {
@@ -260,19 +290,20 @@ func (t *Trie) Abort() {
 		hashNode := HashNode(t.oldRoot)
 		t.root = &hashNode
 	}
+	return nil
 }
 
 func (t *Trie) RootHash() []byte {
 	if t.root == nil {
-		return nil
+		return zero
 	}
-	return t.root.Hash()
+	return t.root.Hash(t.cs)
 }
 
 func (t *Trie) Serialize() ([]byte, error) {
 	t.lock.Lock()
 	t.lock.Unlock()
-	persistTrie := &PersistTrie{}
+	persistTrie := &pb.PersistTrie{}
 	newNode, err := t.persist(t.root, persistTrie)
 	if err != nil {
 		return nil, err
@@ -282,22 +313,25 @@ func (t *Trie) Serialize() ([]byte, error) {
 	return data, err
 }
 
-func (t *Trie) persist(node Node, persistTrie *PersistTrie) (Node, error) {
+func (t *Trie) persist(node Node, persistTrie *pb.PersistTrie) (Node, error) {
 	if node != nil {
 		if n, ok := node.(*HashNode); ok {
-			data, err := t.kv.Get([]byte(*n))
+			data, err := t.kv.GetData([]byte(*n))
 			if err != nil {
 				return node, err
 			}
-			newNode, err := DeserializeNode(data)
+			newNode, err := DeserializeNode(t.cs, data)
 			if err != nil {
 				return node, err
 			}
 			node = newNode
 		}
-		data := node.Serialize()
-		persistKV := PersistKV{
-			Key:   node.Hash(),
+		data, err := node.Serialize(t.cs)
+		if err != nil {
+			return nil, err
+		}
+		persistKV := pb.PersistKV{
+			Key:   node.Hash(t.cs),
 			Value: data,
 		}
 		persistTrie.Pairs = append(persistTrie.Pairs, &persistKV)
@@ -314,13 +348,16 @@ func (t *Trie) persist(node Node, persistTrie *PersistTrie) (Node, error) {
 }
 
 func (t *Trie) Deserialize(data []byte) error {
-	persistTrie := PersistTrie{}
+	persistTrie := pb.PersistTrie{}
 	err := proto.Unmarshal(data, &persistTrie)
 	if err != nil {
 		return err
 	}
 	for i := 0; i < len(persistTrie.Pairs); i++ {
-		t.kv.Put(persistTrie.Pairs[i].Key, persistTrie.Pairs[i].Value)
+		err := t.kv.PutData(persistTrie.Pairs[i].Key, persistTrie.Pairs[i].Value)
+		if err != nil {
+			return err
+		}
 	}
 	if len(persistTrie.Pairs) == 0 {
 		t.root = nil
