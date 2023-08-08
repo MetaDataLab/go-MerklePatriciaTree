@@ -5,49 +5,47 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"hash"
 	"sync"
 
-	"github.com/golang/protobuf/proto"
+	"google.golang.org/protobuf/proto"
 
-	"github.com/tokentransfer/go-MerklePatriciaTree/pb"
-
-	libcrypto "github.com/tokentransfer/interfaces/crypto"
-	libstore "github.com/tokentransfer/interfaces/store"
+	"github.com/MetaDataLab/go-MerklePatriciaTree/pb"
 )
 
-var once = &sync.Once{}
-var zero []byte
-
+type KvStorage interface {
+	Put(key, val []byte) error
+	Get(key []byte) ([]byte, error)
+	Delete(key []byte) error
+}
 type Trie struct {
-	oldRoot []byte
-	root    Node
-	kv      libstore.KvService
-	cs      libcrypto.CryptoService
-	lock    *sync.RWMutex
+	oldRootHash []byte
+	root        Node
+	kv          KvStorage
+	cs          hash.Hash
+	lock        *sync.RWMutex
+	rootKey     []byte
 }
 
-func New(cs libcrypto.CryptoService, kv libstore.KvService) *Trie {
-	once.Do(func() {
-		zero = libcrypto.ZeroHash(cs)
-	})
-
+func New(hasher hash.Hash, kv KvStorage, rootKey []byte) *Trie {
 	var oldRoot []byte = nil
 	var root Node = nil
-	rootHash, _ := kv.GetData(zero)
+	rootHash, _ := kv.Get(rootKey)
 	if len(rootHash) > 0 {
 		r := HashNode(rootHash)
 		root = &r
 	}
 	if root != nil {
-		root.Serialize(cs) // update cached hash
+		root.Serialize(hasher) // update cached hash
 		oldRoot = root.CachedHash()
 	}
 	return &Trie{
-		oldRoot: oldRoot,
-		root:    root,
-		kv:      kv,
-		cs:      cs,
-		lock:    &sync.RWMutex{},
+		oldRootHash: oldRoot,
+		root:        root,
+		kv:          kv,
+		cs:          hasher,
+		lock:        &sync.RWMutex{},
+		rootKey:     rootKey,
 	}
 }
 
@@ -93,7 +91,7 @@ func (t *Trie) get(node Node, key []byte, prefixLen int) (Node, Node, error) {
 		n.Value = newNode
 		return valueNode, node, err
 	case *HashNode:
-		data, err := t.kv.GetData([]byte(*n))
+		data, err := t.kv.Get([]byte(*n))
 		if err != nil {
 			return nil, node, err
 		}
@@ -211,7 +209,7 @@ func (t *Trie) put(node Node, key []byte, value Node, prefixLen int) (Node, erro
 		if prefixLen > len(key) {
 			return node, fmt.Errorf("[Trie] Cannot insert")
 		}
-		data, err := t.kv.GetData([]byte(*n))
+		data, err := t.kv.Get([]byte(*n))
 		if err != nil {
 			return node, err
 		}
@@ -248,7 +246,7 @@ func (t *Trie) Commit() error {
 	t.lock.Lock()
 	defer t.lock.Unlock()
 	if t.root == nil {
-		err := t.kv.RemoveData(zero)
+		err := t.kv.Delete(t.rootKey)
 		if err != nil {
 			return err
 		}
@@ -256,10 +254,10 @@ func (t *Trie) Commit() error {
 	}
 	t.commit(t.root)
 	h := t.root.CachedHash()
-	t.oldRoot = h
+	t.oldRootHash = h
 
 	hn := HashNode(h)
-	err := t.kv.PutData(zero, hn)
+	err := t.kv.Put(t.rootKey, hn)
 	if err != nil {
 		return err
 	}
@@ -284,10 +282,10 @@ func (t *Trie) commit(node Node) {
 func (t *Trie) Abort() error {
 	t.lock.Lock()
 	defer t.lock.Unlock()
-	if t.oldRoot == nil {
+	if t.oldRootHash == nil {
 		t.root = nil
 	} else {
-		hashNode := HashNode(t.oldRoot)
+		hashNode := HashNode(t.oldRootHash)
 		t.root = &hashNode
 	}
 	return nil
@@ -295,7 +293,7 @@ func (t *Trie) Abort() error {
 
 func (t *Trie) RootHash() []byte {
 	if t.root == nil {
-		return zero
+		return t.rootKey
 	}
 	return t.root.Hash(t.cs)
 }
@@ -316,7 +314,7 @@ func (t *Trie) Serialize() ([]byte, error) {
 func (t *Trie) persist(node Node, persistTrie *pb.PersistTrie) (Node, error) {
 	if node != nil {
 		if n, ok := node.(*HashNode); ok {
-			data, err := t.kv.GetData([]byte(*n))
+			data, err := t.kv.Get([]byte(*n))
 			if err != nil {
 				return node, err
 			}
@@ -354,7 +352,7 @@ func (t *Trie) Deserialize(data []byte) error {
 		return err
 	}
 	for i := 0; i < len(persistTrie.Pairs); i++ {
-		err := t.kv.PutData(persistTrie.Pairs[i].Key, persistTrie.Pairs[i].Value)
+		err := t.kv.Put(persistTrie.Pairs[i].Key, persistTrie.Pairs[i].Value)
 		if err != nil {
 			return err
 		}
