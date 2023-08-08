@@ -1,4 +1,4 @@
-package mpt
+package internal
 
 import (
 	"bytes"

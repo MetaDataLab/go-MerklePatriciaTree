@@ -1,4 +1,4 @@
-package mpt
+package internal
 
 import (
 	"errors"
@@ -11,6 +11,11 @@ import (
 )
 
 type (
+	KvStorage interface {
+		Put(key, val []byte) error
+		Get(key []byte) ([]byte, error)
+		Delete(key []byte) error
+	}
 	Node interface {
 		Hash(hash.Hash) []byte
 		CachedHash() []byte
@@ -19,26 +24,26 @@ type (
 	}
 	FullNode struct {
 		Children [257]Node
-		cache    []byte
-		dirty    bool
+		Cache    []byte
+		Dirty    bool
 	}
 	ShortNode struct {
 		Key   []byte
 		Value Node
-		cache []byte
-		dirty bool
+		Cache []byte
+		Dirty bool
 	}
 	HashNode  []byte
 	ValueNode struct {
 		Value []byte
-		cache []byte
-		dirty bool
+		Cache []byte
+		Dirty bool
 	}
 )
 
-func (n *FullNode) CachedHash() []byte  { return n.cache }
-func (n *ShortNode) CachedHash() []byte { return n.cache }
-func (n *ValueNode) CachedHash() []byte { return n.cache }
+func (n *FullNode) CachedHash() []byte  { return n.Cache }
+func (n *ShortNode) CachedHash() []byte { return n.Cache }
+func (n *ValueNode) CachedHash() []byte { return n.Cache }
 func (n *HashNode) CachedHash() []byte  { return []byte(*n) }
 
 func DeserializeNode(hasher hash.Hash, data []byte) (Node, error) {
@@ -63,7 +68,7 @@ func DeserializeNode(hasher hash.Hash, data []byte) (Node, error) {
 		if err != nil {
 			return nil, err
 		}
-		fullNode.cache = hash[:]
+		fullNode.Cache = hash[:]
 		return &fullNode, nil
 	case *pb.PersistNode_Short:
 		shortNode := ShortNode{}
@@ -77,7 +82,7 @@ func DeserializeNode(hasher hash.Hash, data []byte) (Node, error) {
 		if err != nil {
 			return nil, err
 		}
-		shortNode.cache = hash[:]
+		shortNode.Cache = hash[:]
 		return &shortNode, nil
 	case *pb.PersistNode_Value:
 		hash, err := Hash(hasher, data)
@@ -101,16 +106,16 @@ func (vn *ValueNode) Serialize(hasher hash.Hash) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	vn.cache = hash[:]
-	vn.dirty = false
+	vn.Cache = hash[:]
+	vn.Dirty = false
 	return data, nil
 }
 
 func (vn *ValueNode) Hash(cs hash.Hash) []byte {
-	if vn.dirty {
+	if vn.Dirty {
 		vn.Serialize(cs)
 	}
-	return vn.cache
+	return vn.Cache
 }
 
 func (vn *ValueNode) Save(kv KvStorage, cs hash.Hash) error {
@@ -118,7 +123,7 @@ func (vn *ValueNode) Save(kv KvStorage, cs hash.Hash) error {
 	if err != nil {
 		return err
 	}
-	return kv.Put(vn.cache, data)
+	return kv.Put(vn.Cache, data)
 }
 
 func (fn *FullNode) Serialize(hasher hash.Hash) ([]byte, error) {
@@ -136,16 +141,16 @@ func (fn *FullNode) Serialize(hasher hash.Hash) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	fn.cache = hash[:]
-	fn.dirty = false
+	fn.Cache = hash[:]
+	fn.Dirty = false
 	return data, nil
 }
 
 func (fn *FullNode) Hash(cs hash.Hash) []byte {
-	if fn.dirty {
+	if fn.Dirty {
 		fn.Serialize(cs)
 	}
-	return fn.cache
+	return fn.Cache
 }
 
 func (fn *FullNode) Save(kv KvStorage, cs hash.Hash) error {
@@ -153,7 +158,7 @@ func (fn *FullNode) Save(kv KvStorage, cs hash.Hash) error {
 	if err != nil {
 		return err
 	}
-	return kv.Put(fn.cache, data)
+	return kv.Put(fn.Cache, data)
 }
 
 func (sn *ShortNode) Serialize(hasher hash.Hash) ([]byte, error) {
@@ -167,16 +172,16 @@ func (sn *ShortNode) Serialize(hasher hash.Hash) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	sn.cache = hash[:]
-	sn.dirty = false
+	sn.Cache = hash[:]
+	sn.Dirty = false
 	return data, nil
 }
 
 func (sn *ShortNode) Hash(cs hash.Hash) []byte {
-	if sn.dirty {
+	if sn.Dirty {
 		sn.Serialize(cs)
 	}
-	return sn.cache
+	return sn.Cache
 }
 
 func (sn *ShortNode) Save(kv KvStorage, cs hash.Hash) error {
@@ -184,9 +189,9 @@ func (sn *ShortNode) Save(kv KvStorage, cs hash.Hash) error {
 	if err != nil {
 		return err
 	}
-	return kv.Put(sn.cache, data)
+	return kv.Put(sn.Cache, data)
 }
 
-func (hn *HashNode) Hash(hash.Hash) []byte                          { return []byte(*hn) }
-func (hn *HashNode) Serialize(hash.Hash) ([]byte, error)            { return nil, nil }
+func (hn *HashNode) Hash(hash.Hash) []byte                 { return []byte(*hn) }
+func (hn *HashNode) Serialize(hash.Hash) ([]byte, error)   { return nil, nil }
 func (hn *HashNode) Save(kv KvStorage, cs hash.Hash) error { return nil }
