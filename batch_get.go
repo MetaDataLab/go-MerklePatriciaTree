@@ -9,6 +9,8 @@ import (
 )
 
 func (b *Batch) Get(key []byte) ([]byte, error) {
+	b.RLock()
+	defer b.RUnlock()
 	node, expandedNode, err := b.get(b.root, key, 0)
 	if expandedNode != nil {
 		b.root = expandedNode
