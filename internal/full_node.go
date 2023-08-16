@@ -8,9 +8,10 @@ import (
 )
 
 type FullNode struct {
-	Children [257]Node
-	Cache    []byte
-	Status   NodeStatus
+	OriginalKey []byte
+	Children    [257]Node
+	Cache       []byte
+	Status      NodeStatus
 }
 
 func (n *FullNode) CachedHash() []byte { return n.Cache }
@@ -43,9 +44,27 @@ func (fn *FullNode) Hash(cs hash.Hash) []byte {
 }
 
 func (fn *FullNode) Save(kv KvStorage, cs hash.Hash) error {
+	if fn.Status == DELETED {
+		return kv.Delete(fn.OriginalKey)
+	}
 	data, err := fn.Serialize(cs)
 	if err != nil {
 		return err
 	}
 	return kv.Put(fn.Cache, data)
+}
+
+func (fn *FullNode) OnlyChild() (bool, Node) {
+	var hasOneChild bool
+	var onlyChild Node
+	for _, child := range fn.Children {
+		if child != nil {
+			if hasOneChild {
+				return false, nil
+			}
+			hasOneChild = true
+			onlyChild = child
+		}
+	}
+	return hasOneChild, onlyChild
 }

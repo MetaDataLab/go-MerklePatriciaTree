@@ -7,20 +7,20 @@ import (
 	"github.com/MetaDataLab/go-MerklePatriciaTree/internal"
 )
 
-func (t *Batch) Put(key, value []byte) error {
+func (b *Batch) Put(key, value []byte) error {
 	valueNode := internal.ValueNode{
 		Value:  value,
 		Cache:  nil,
 		Status: internal.DIRTY,
 	}
-	expandedNode, err := t.put(t.root, key, &valueNode, 0)
+	expandedNode, err := b.put(b.root, key, &valueNode, 0)
 	if expandedNode != nil {
-		t.root = expandedNode
+		b.root = expandedNode
 	}
 	return err
 }
 
-func (t *Batch) put(node internal.Node, key []byte, value internal.Node, prefixLen int) (internal.Node, error) {
+func (b *Batch) put(node internal.Node, key []byte, value internal.Node, prefixLen int) (internal.Node, error) {
 	if node == nil {
 		if prefixLen > len(key) {
 			return node, errors.New("[Trie Batch] Cannot insert")
@@ -45,7 +45,7 @@ func (t *Batch) put(node internal.Node, key []byte, value internal.Node, prefixL
 			return n, nil
 		}
 		// prefixLen < len(key)
-		newNode, err := t.put(n.Children[key[prefixLen]], key, value, prefixLen+1)
+		newNode, err := b.put(n.Children[key[prefixLen]], key, value, prefixLen+1)
 		if err != nil {
 			return node, err
 		}
@@ -58,7 +58,7 @@ func (t *Batch) put(node internal.Node, key []byte, value internal.Node, prefixL
 		}
 		commonLen := commonPrefix(n.Key, key[prefixLen:])
 		if commonLen == len(n.Key) {
-			newNode, err := t.put(n.Value, key, value, prefixLen+len(n.Key))
+			newNode, err := b.put(n.Value, key, value, prefixLen+len(n.Key))
 			if err != nil {
 				return node, err
 			}
@@ -67,11 +67,11 @@ func (t *Batch) put(node internal.Node, key []byte, value internal.Node, prefixL
 		}
 		prefixLen += commonLen
 		fullNode := &internal.FullNode{Status: internal.DIRTY}
-		newNode, err := t.put(fullNode, key, value, prefixLen)
+		newNode, err := b.put(fullNode, key, value, prefixLen)
 		if err != nil {
 			return node, err
 		}
-		newNode, err = t.put(newNode, n.Key, n.Value, commonLen)
+		newNode, err = b.put(newNode, n.Key, n.Value, commonLen)
 		if err != nil {
 			return node, err
 		}
@@ -88,11 +88,11 @@ func (t *Batch) put(node internal.Node, key []byte, value internal.Node, prefixL
 			return value, nil
 		} else if prefixLen < len(key) {
 			fullNode := &internal.FullNode{Status: internal.DIRTY}
-			newNode, err := t.put(fullNode, key, value, prefixLen)
+			newNode, err := b.put(fullNode, key, value, prefixLen)
 			if err != nil {
 				return node, fmt.Errorf("[Trie Batch] Cannot insert")
 			}
-			newNode, err = t.put(newNode, key[:prefixLen], node, prefixLen)
+			newNode, err = b.put(newNode, key[:prefixLen], node, prefixLen)
 			if err != nil {
 				return node, fmt.Errorf("[Trie Batch] Cannot insert")
 			}
@@ -104,15 +104,15 @@ func (t *Batch) put(node internal.Node, key []byte, value internal.Node, prefixL
 		if prefixLen > len(key) {
 			return node, fmt.Errorf("[Trie Batch] Cannot insert")
 		}
-		data, err := t.kv.Get([]byte(*n))
+		data, err := b.kv.Get([]byte(*n))
 		if err != nil {
 			return node, err
 		}
-		newNode, err := internal.DeserializeNode(t.hFac(), data)
+		newNode, err := internal.DeserializeNode(b.hFac(), data)
 		if err != nil {
 			return node, err
 		}
-		newNode, err = t.put(newNode, key, value, prefixLen)
+		newNode, err = b.put(newNode, key, value, prefixLen)
 		if err != nil {
 			return node, err
 		}

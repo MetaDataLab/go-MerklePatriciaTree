@@ -1,12 +1,15 @@
 package mpt
 
 import (
+	"errors"
 	"hash"
 	"sync"
 
 	"github.com/MetaDataLab/go-MerklePatriciaTree/internal"
 	"github.com/MetaDataLab/go-MerklePatriciaTree/pb"
 )
+
+var KeyNotFound = errors.New("key not found")
 
 type HasherFactory func() hash.Hash
 

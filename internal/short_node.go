@@ -8,6 +8,7 @@ import (
 )
 
 type ShortNode struct {
+	OriginalKey []byte
 	Key    []byte
 	Value  Node
 	Cache  []byte
@@ -40,6 +41,9 @@ func (sn *ShortNode) Hash(cs hash.Hash) []byte {
 }
 
 func (sn *ShortNode) Save(kv KvStorage, cs hash.Hash) error {
+	if sn.Status == DELETED {
+		return kv.Delete(sn.OriginalKey)
+	}
 	data, err := sn.Serialize(cs)
 	if err != nil {
 		return err

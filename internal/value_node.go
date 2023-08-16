@@ -8,9 +8,10 @@ import (
 )
 
 type ValueNode struct {
-	Value  []byte
-	Cache  []byte
-	Status NodeStatus
+	OriginalKey []byte
+	Value       []byte
+	Cache       []byte
+	Status      NodeStatus
 }
 
 func (n *ValueNode) CachedHash() []byte { return n.Cache }

@@ -40,6 +40,8 @@ func DeserializeNode(hasher hash.Hash, data []byte) (Node, error) {
 		if err != nil {
 			return nil, err
 		}
+		originalKey := make([]byte, len(hash))
+		fullNode.OriginalKey = originalKey
 		fullNode.Cache = hash[:]
 		return &fullNode, nil
 	case *pb.PersistNode_Short:
@@ -54,6 +56,8 @@ func DeserializeNode(hasher hash.Hash, data []byte) (Node, error) {
 		if err != nil {
 			return nil, err
 		}
+		originalKey := make([]byte, len(hash))
+		shortNode.OriginalKey = originalKey
 		shortNode.Cache = hash[:]
 		return &shortNode, nil
 	case *pb.PersistNode_Value:
@@ -61,7 +65,9 @@ func DeserializeNode(hasher hash.Hash, data []byte) (Node, error) {
 		if err != nil {
 			return nil, err
 		}
-		ret := ValueNode{v.Value, hash[:], CLEAN}
+		originalKey := make([]byte, len(hash))
+		copy(originalKey, hash)
+		ret := ValueNode{originalKey, v.Value, hash[:], CLEAN}
 		return &ret, nil
 	}
 	return nil, errors.New("[Node] Unknown node type")

@@ -115,19 +115,20 @@ func TestTriePutDelete(t *testing.T) {
 		[]byte("test_root"),
 	)
 
-	err = testingTrie2.Delete(testCases["test1_key"])
+	err = testingTrie2.Delete([]byte("test1_key"))
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	for k, v := range testCases {
 		val, err := testingTrie2.Get([]byte(k))
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		if k == "test1_key" && val != nil {
-			err = errors.New("delete failed")
-			t.Fatal(err)
+		if k == "test1_key" {
+			if err != KeyNotFound {
+				err = errors.New("delete failed")
+				t.Fatal(err)
+			} else {
+				continue
+			}
 		}
 
 		if bytes.Compare(val, v) != 0 {
