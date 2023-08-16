@@ -16,4 +16,11 @@ type (
 		Serialize(hash.Hash) ([]byte, error)
 		Save(KvStorage, hash.Hash) error
 	}
+	NodeStatus uint8
+)
+
+const (
+	CLEAN NodeStatus = iota
+	DIRTY
+	DELETED
 )

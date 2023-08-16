@@ -4,8 +4,6 @@ import (
 	"hash"
 	"sync"
 
-	"google.golang.org/protobuf/proto"
-
 	"github.com/MetaDataLab/go-MerklePatriciaTree/internal"
 	"github.com/MetaDataLab/go-MerklePatriciaTree/pb"
 )
@@ -13,127 +11,66 @@ import (
 type HasherFactory func() hash.Hash
 
 type Trie struct {
-	oldRootHash []byte
-	root        internal.Node
-	kv          internal.KvStorage
-	hFac        HasherFactory
-	lock        *sync.RWMutex
-	rootKey     []byte
+	kv      internal.KvStorage
+	hFac    HasherFactory
+	rootKey []byte
+
+	sync.RWMutex
 }
 
 func New(hf HasherFactory, kv internal.KvStorage, rootKey []byte) *Trie {
-	var oldRoot []byte = nil
+	return &Trie{
+		kv:      kv,
+		hFac:    hf,
+		rootKey: rootKey,
+	}
+}
+
+func (t *Trie) Batch() *Batch {
+	return &Batch{
+		root: t.loadRoot(),
+		Trie: t,
+	}
+}
+
+func (t *Trie) Delete(key []byte) error {
+	batch := t.Batch()
+	err := batch.Delete(key)
+	if err != nil {
+		return err
+	}
+	return batch.Commit()
+}
+
+func (t *Trie) Get(key []byte) ([]byte, error) {
+	batch := t.Batch()
+	data, err := batch.Get(key)
+	if err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+
+func (t *Trie) Put(key, value []byte) error {
+	batch := t.Batch()
+	err := batch.Put(key, value)
+	if err != nil {
+		return err
+	}
+	return batch.Commit()
+}
+
+func (t *Trie) loadRoot() internal.Node {
 	var root internal.Node = nil
-	rootHash, _ := kv.Get(rootKey)
+	rootHash, _ := t.kv.Get(t.rootKey)
 	if len(rootHash) > 0 {
 		r := internal.HashNode(rootHash)
 		root = &r
 	}
 	if root != nil {
-		root.Serialize(hf()) // update cached hash
-		oldRoot = root.CachedHash()
+		root.Serialize(t.hFac())
 	}
-	return &Trie{
-		oldRootHash: oldRoot,
-		root:        root,
-		kv:          kv,
-		hFac:        hf,
-		lock:        &sync.RWMutex{},
-		rootKey:     rootKey,
-	}
-}
-
-func (t *Trie) Commit() error {
-	t.lock.Lock()
-	defer t.lock.Unlock()
-	if t.root == nil {
-		err := t.kv.Delete(t.rootKey)
-		if err != nil {
-			return err
-		}
-		return nil
-	}
-	t.commit(t.root)
-	h := t.root.CachedHash()
-	t.oldRootHash = h
-
-	hn := internal.HashNode(h)
-	err := t.kv.Put(t.rootKey, hn)
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-func (t *Trie) commit(node internal.Node) {
-	switch n := node.(type) {
-	case *internal.FullNode:
-		for i := 0; i < len(n.Children); i++ {
-			if n.Children[i] == nil {
-				continue
-			}
-			t.commit(n.Children[i])
-		}
-		n.Save(t.kv, t.hFac())
-	case *internal.ShortNode:
-		t.commit(n.Value)
-		n.Save(t.kv, t.hFac())
-	case *internal.ValueNode:
-		n.Save(t.kv, t.hFac())
-	}
-}
-
-func (t *Trie) Abort() error {
-	t.lock.Lock()
-	defer t.lock.Unlock()
-	if t.oldRootHash == nil {
-		t.root = nil
-	} else {
-		hashNode := internal.HashNode(t.oldRootHash)
-		t.root = &hashNode
-	}
-	return nil
-}
-
-func (t *Trie) RootHash() []byte {
-	if t.root == nil {
-		return t.rootKey
-	}
-	return t.root.Hash(t.hFac())
-}
-
-func (t *Trie) Serialize() ([]byte, error) {
-	t.lock.Lock()
-	t.lock.Unlock()
-	persistTrie := &pb.PersistTrie{}
-	newNode, err := t.persist(t.root, persistTrie)
-	if err != nil {
-		return nil, err
-	}
-	t.root = newNode
-	data, err := proto.Marshal(persistTrie)
-	return data, err
-}
-
-func (t *Trie) Deserialize(data []byte) error {
-	persistTrie := pb.PersistTrie{}
-	err := proto.Unmarshal(data, &persistTrie)
-	if err != nil {
-		return err
-	}
-	for i := 0; i < len(persistTrie.Pairs); i++ {
-		err := t.kv.Put(persistTrie.Pairs[i].Key, persistTrie.Pairs[i].Value)
-		if err != nil {
-			return err
-		}
-	}
-	if len(persistTrie.Pairs) == 0 {
-		t.root = nil
-	} else {
-		rootNode := internal.HashNode(persistTrie.Pairs[0].Key)
-		t.root = &rootNode
-	}
-	return nil
+	return root
 }
 
 func (t *Trie) persist(node internal.Node, persistTrie *pb.PersistTrie) (internal.Node, error) {
@@ -168,20 +105,4 @@ func (t *Trie) persist(node internal.Node, persistTrie *pb.PersistTrie) (interna
 		t.persist(n.Value, persistTrie)
 	}
 	return node, nil
-}
-
-func commonPrefix(a, b []byte) int {
-	minLen := len(a)
-	if len(b) < len(a) {
-		minLen = len(b)
-	}
-	ret := 0
-	for i := 0; i < minLen; i++ {
-		if a[i] == b[i] {
-			ret++
-		} else {
-			break
-		}
-	}
-	return ret
 }

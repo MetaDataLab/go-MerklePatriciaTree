@@ -61,7 +61,7 @@ func DeserializeNode(hasher hash.Hash, data []byte) (Node, error) {
 		if err != nil {
 			return nil, err
 		}
-		ret := ValueNode{v.Value, hash[:], false}
+		ret := ValueNode{v.Value, hash[:], CLEAN}
 		return &ret, nil
 	}
 	return nil, errors.New("[Node] Unknown node type")

@@ -10,7 +10,7 @@ import (
 type FullNode struct {
 	Children [257]Node
 	Cache    []byte
-	Dirty    bool
+	Status   NodeStatus
 }
 
 func (n *FullNode) CachedHash() []byte { return n.Cache }
@@ -31,12 +31,12 @@ func (fn *FullNode) Serialize(hasher hash.Hash) ([]byte, error) {
 		return nil, err
 	}
 	fn.Cache = hash[:]
-	fn.Dirty = false
+	fn.Status = CLEAN
 	return data, nil
 }
 
 func (fn *FullNode) Hash(cs hash.Hash) []byte {
-	if fn.Dirty {
+	if fn.Status == DIRTY {
 		fn.Serialize(cs)
 	}
 	return fn.Cache

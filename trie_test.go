@@ -40,14 +40,15 @@ func TestTriePutGet(t *testing.T) {
 		[]byte("test_root"),
 	)
 	var err error
+	txn := testingTrie.Batch()
 	for k, v := range testCases {
-		err = testingTrie.Put([]byte(k), v)
+		err = txn.Put([]byte(k), v)
 		if err != nil {
 			t.Fatal(err)
 		}
 	}
 
-	err = testingTrie.Commit()
+	err = txn.Commit()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,14 +95,15 @@ func TestTriePutDelete(t *testing.T) {
 		[]byte("test_root"),
 	)
 	var err error
+	txn := testingTrie.Batch()
 	for k, v := range testCases {
-		err = testingTrie.Put([]byte(k), v)
+		err = txn.Put([]byte(k), v)
 		if err != nil {
 			t.Fatal(err)
 		}
 	}
 
-	err = testingTrie.Commit()
+	err = txn.Commit()
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -8,10 +8,10 @@ import (
 )
 
 type ShortNode struct {
-	Key   []byte
-	Value Node
-	Cache []byte
-	Dirty bool
+	Key    []byte
+	Value  Node
+	Cache  []byte
+	Status NodeStatus
 }
 
 func (n *ShortNode) CachedHash() []byte { return n.Cache }
@@ -28,12 +28,12 @@ func (sn *ShortNode) Serialize(hasher hash.Hash) ([]byte, error) {
 		return nil, err
 	}
 	sn.Cache = hash[:]
-	sn.Dirty = false
+	sn.Status = CLEAN
 	return data, nil
 }
 
 func (sn *ShortNode) Hash(cs hash.Hash) []byte {
-	if sn.Dirty {
+	if sn.Status == DIRTY {
 		sn.Serialize(cs)
 	}
 	return sn.Cache

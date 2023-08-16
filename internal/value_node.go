@@ -8,9 +8,9 @@ import (
 )
 
 type ValueNode struct {
-	Value []byte
-	Cache []byte
-	Dirty bool
+	Value  []byte
+	Cache  []byte
+	Status NodeStatus
 }
 
 func (n *ValueNode) CachedHash() []byte { return n.Cache }
@@ -27,12 +27,12 @@ func (vn *ValueNode) Serialize(hasher hash.Hash) ([]byte, error) {
 		return nil, err
 	}
 	vn.Cache = hash[:]
-	vn.Dirty = false
+	vn.Status = CLEAN
 	return data, nil
 }
 
 func (vn *ValueNode) Hash(cs hash.Hash) []byte {
-	if vn.Dirty {
+	if vn.Status == DIRTY {
 		vn.Serialize(cs)
 	}
 	return vn.Cache

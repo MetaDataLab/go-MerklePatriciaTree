@@ -9,9 +9,7 @@ import (
 	"github.com/MetaDataLab/go-MerklePatriciaTree/internal"
 )
 
-func (t *Trie) Delete(key []byte) error {
-	t.lock.Lock()
-	defer t.lock.Unlock()
+func (t *Batch) Delete(key []byte) error {
 	n, err := t.delete(t.root, key, 0)
 	if err != nil {
 		return err
@@ -20,18 +18,17 @@ func (t *Trie) Delete(key []byte) error {
 	return nil
 }
 
-func (t *Trie) delete(node internal.Node, key []byte, prefixLen int) (internal.Node, error) {
+func (t *Batch) delete(node internal.Node, key []byte, prefixLen int) (internal.Node, error) {
 	if node == nil {
-		return node, fmt.Errorf("[Trie] key not found: %s", hex.EncodeToString(key))
+		return node, fmt.Errorf("[Trie Batch] key not found: %s", hex.EncodeToString(key))
 	}
 	switch n := node.(type) {
 	case *internal.FullNode:
 		if prefixLen > len(key) {
-			return node, fmt.Errorf("[Trie] key not found: %s", hex.EncodeToString(key))
+			return node, fmt.Errorf("[Trie Batch] key not found: %s", hex.EncodeToString(key))
 		}
 		if prefixLen == len(key) {
 			newNode, err := t.delete(n.Children[256], key, prefixLen)
-			n.Children[256] = nil
 			return newNode, err
 		}
 
@@ -40,7 +37,7 @@ func (t *Trie) delete(node internal.Node, key []byte, prefixLen int) (internal.N
 		return newNode, err
 	case *internal.ShortNode:
 		if len(key)-prefixLen < len(n.Key) || !bytes.Equal(n.Key, key[prefixLen:prefixLen+len(n.Key)]) {
-			return node, fmt.Errorf("[Trie] key not found: %s", hex.EncodeToString(key))
+			return node, fmt.Errorf("[Trie Batch] key not found: %s", hex.EncodeToString(key))
 		}
 		newNode, err := t.delete(n.Value, key, prefixLen+len(n.Key))
 		n.Value = newNode
@@ -52,10 +49,10 @@ func (t *Trie) delete(node internal.Node, key []byte, prefixLen int) (internal.N
 		}
 		loadedNode, err := internal.DeserializeNode(t.hFac(), data)
 		if err != nil {
-			return node, fmt.Errorf("[Trie] Cannot load node: %s", err.Error())
+			return node, fmt.Errorf("[Trie Batch] Cannot load node: %s", err.Error())
 		}
 		if !bytes.Equal([]byte(*n), loadedNode.Hash(t.hFac())) {
-			return node, fmt.Errorf("[Trie] Cannot load node: hash does not match")
+			return node, fmt.Errorf("[Trie Batch] Cannot load node: hash does not match")
 		}
 		loadedNode, err = t.delete(loadedNode, key, prefixLen)
 		return loadedNode, err
@@ -64,7 +61,7 @@ func (t *Trie) delete(node internal.Node, key []byte, prefixLen int) (internal.N
 			return node, nil
 		}
 
-		return node, fmt.Errorf("[Trie] key not found: %s", hex.EncodeToString(key))
+		return node, fmt.Errorf("[Trie Batch] key not found: %s", hex.EncodeToString(key))
 	}
 	return node, errors.New("[Tire] Unknown node type")
 }
