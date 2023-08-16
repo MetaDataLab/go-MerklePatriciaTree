@@ -63,6 +63,11 @@ func (t *Trie) Put(key, value []byte) error {
 	return batch.Commit()
 }
 
+func (t *Trie) RootHash() []byte {
+	rootHash, _ := t.kv.Get(t.rootKey)
+	return rootHash
+}
+
 func (t *Trie) loadRoot() internal.Node {
 	var root internal.Node = nil
 	rootHash, _ := t.kv.Get(t.rootKey)

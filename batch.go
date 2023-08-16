@@ -51,13 +51,6 @@ func (t *Batch) commit(node internal.Node) {
 	}
 }
 
-func (t *Batch) RootHash() []byte {
-	if t.root == nil {
-		return t.rootKey
-	}
-	return t.root.Hash(t.hFac())
-}
-
 func commonPrefix(a, b []byte) int {
 	minLen := len(a)
 	if len(b) < len(a) {
