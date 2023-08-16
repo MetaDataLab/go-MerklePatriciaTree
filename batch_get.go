@@ -70,5 +70,5 @@ func (b *Batch) get(node internal.Node, key []byte, prefixLen int) (internal.Nod
 
 		return nil, node, KeyNotFound
 	}
-	return nil, node, errors.New("[Tire] Unknown node type")
+	return nil, node, errors.New("[Tire Batch] Unknown node type")
 }

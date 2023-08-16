@@ -75,6 +75,11 @@ func (b *Batch) put(node internal.Node, key []byte, value internal.Node, prefixL
 		if err != nil {
 			return node, err
 		}
+
+		// current node is unreferred
+		// delete it from kv storage
+		b.toDel = appendEx(b.toDel, n.OriginalKey)
+
 		if commonLen > 0 {
 			shortNode := internal.ShortNode{Status: internal.DIRTY}
 			shortNode.Key = n.Key[:commonLen]
@@ -85,6 +90,8 @@ func (b *Batch) put(node internal.Node, key []byte, value internal.Node, prefixL
 	case *internal.ValueNode:
 		n.Status = internal.DIRTY
 		if prefixLen == len(key) {
+			// current node is unreferred here
+			b.toDel = appendEx(b.toDel, n.OriginalKey)
 			return value, nil
 		} else if prefixLen < len(key) {
 			fullNode := &internal.FullNode{Status: internal.DIRTY}

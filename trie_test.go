@@ -29,7 +29,7 @@ var testCases = map[string][]byte{
 	"test3_key": []byte("test3_value"),
 }
 
-func TestTriePutGet(t *testing.T) {
+func TestTriePutGetUpdate(t *testing.T) {
 	kv := &MapKv{
 		kv: map[string][]byte{},
 	}
@@ -74,6 +74,37 @@ func TestTriePutGet(t *testing.T) {
 
 	for k, v := range testCases {
 		val, err := testingTrie2.Get([]byte(k))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if bytes.Compare(val, v) != 0 {
+			err = errors.New("value not equal")
+			t.Fatal(err)
+		}
+	}
+
+	// test update
+	testingTrie3 := New(
+		crypto.SHA256.New,
+		kv,
+		[]byte("test_root"),
+	)
+	testCases["test1_key"] = []byte("test1_value2")
+	txn = testingTrie3.Batch()
+	for k, v := range testCases {
+		err = txn.Put([]byte(k), v)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	err = txn.Commit()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for k, v := range testCases {
+		val, err := testingTrie3.Get([]byte(k))
 		if err != nil {
 			t.Fatal(err)
 		}

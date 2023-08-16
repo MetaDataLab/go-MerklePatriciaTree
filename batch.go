@@ -10,6 +10,7 @@ type Batch struct {
 	toDel [][]byte
 }
 
+// the batch should not be used after committed
 func (t *Batch) Commit() error {
 	t.Lock()
 	defer t.Unlock()
@@ -20,6 +21,9 @@ func (t *Batch) Commit() error {
 		}
 		return nil
 	}
+	for _, key := range t.toDel {
+		t.kv.Delete(key)
+	}
 	t.commit(t.root)
 	h := t.root.CachedHash()
 	hn := internal.HashNode(h)
@@ -27,9 +31,7 @@ func (t *Batch) Commit() error {
 	if err != nil {
 		return err
 	}
-	for _, key := range t.toDel {
-		t.kv.Delete(key)
-	}
+
 	return nil
 }
 
