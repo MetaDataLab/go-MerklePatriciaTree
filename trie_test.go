@@ -6,14 +6,14 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/MetaDataLab/go-MerklePatriciaTree/internal"
+	"github.com/MetaDataLab/go-MerklePatriciaTree/api"
 )
 
 type MapKv struct {
 	kv map[string][]byte
 }
 
-func (m *MapKv) Transaction() (internal.KvStorageTransaction, error) {
+func (m *MapKv) Transaction() (api.KvStorageTransaction, error) {
 	return &MapKvTransaction{
 		mapkv: m,
 	}, nil

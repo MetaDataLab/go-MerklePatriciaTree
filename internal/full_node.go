@@ -3,6 +3,7 @@ package internal
 import (
 	"hash"
 
+	"github.com/MetaDataLab/go-MerklePatriciaTree/api"
 	"github.com/MetaDataLab/go-MerklePatriciaTree/pb"
 	"google.golang.org/protobuf/proto"
 )
@@ -43,7 +44,7 @@ func (fn *FullNode) Hash(cs hash.Hash) []byte {
 	return fn.Cache
 }
 
-func (fn *FullNode) Save(kv KvStorageTransaction, cs hash.Hash) error {
+func (fn *FullNode) Save(kv api.KvStorageTransaction, cs hash.Hash) error {
 	if fn.Status == DELETED {
 		return kv.Delete(fn.OriginalKey)
 	}

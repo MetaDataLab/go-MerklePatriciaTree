@@ -1,13 +1,14 @@
 package mpt
 
 import (
+	"github.com/MetaDataLab/go-MerklePatriciaTree/api"
 	"github.com/MetaDataLab/go-MerklePatriciaTree/internal"
 )
 
 type Batch struct {
 	root    internal.Node
 	toDel   [][]byte
-	kv      internal.KvStorageTransaction
+	kv      api.KvStorageTransaction
 	rootKey []byte
 	hFac    HasherFactory
 }

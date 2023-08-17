@@ -3,28 +3,18 @@ package internal
 import (
 	"fmt"
 	"hash"
+
+	"github.com/MetaDataLab/go-MerklePatriciaTree/api"
 )
 
 type (
-	KvStorageOperation interface {
-		Put(key, val []byte) error
-		Get(key []byte) ([]byte, error)
-		Delete(key []byte) error
-	}
-	KvStorageTransaction interface {
-		KvStorageOperation
-		Abort() error
-		Commit() error
-	}
-	TransactionalKvStorage interface {
-		Transaction() (KvStorageTransaction, error)
-	}
 	Node interface {
 		Hash(hash.Hash) []byte
 		CachedHash() []byte
 		Serialize(hash.Hash) ([]byte, error)
-		Save(KvStorageTransaction, hash.Hash) error
+		Save(api.KvStorageTransaction, hash.Hash) error
 	}
+
 	NodeStatus uint8
 )
 

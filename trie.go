@@ -4,6 +4,7 @@ import (
 	"errors"
 	"hash"
 
+	"github.com/MetaDataLab/go-MerklePatriciaTree/api"
 	"github.com/MetaDataLab/go-MerklePatriciaTree/internal"
 	"github.com/MetaDataLab/go-MerklePatriciaTree/pb"
 )
@@ -13,12 +14,12 @@ var KeyNotFound = errors.New("key not found")
 type HasherFactory func() hash.Hash
 
 type Trie struct {
-	kv      internal.TransactionalKvStorage
+	kv      api.TransactionalKvStorage
 	hFac    HasherFactory
 	rootKey []byte
 }
 
-func New(hf HasherFactory, kv internal.TransactionalKvStorage, rootKey []byte) *Trie {
+func New(hf HasherFactory, kv api.TransactionalKvStorage, rootKey []byte) *Trie {
 	return &Trie{
 		kv:      kv,
 		hFac:    hf,
@@ -26,7 +27,7 @@ func New(hf HasherFactory, kv internal.TransactionalKvStorage, rootKey []byte) *
 	}
 }
 
-func (t *Trie) Batch(txn internal.KvStorageTransaction) (*Batch, error) {
+func (t *Trie) Batch(txn api.KvStorageTransaction) (*Batch, error) {
 	root, err := t.loadRoot()
 	if err != nil {
 		return nil, err
