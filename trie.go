@@ -28,15 +28,16 @@ func New(hf HasherFactory, kv api.TransactionalKvStorage, rootKey []byte) *Trie 
 }
 
 func (t *Trie) Batch(txn api.KvStorageTransaction) (*Batch, error) {
-	root, err := t.loadRoot()
-	if err != nil {
-		return nil, err
-	}
+	var err error
 	if txn == nil {
 		txn, err = t.kv.Transaction()
 		if err != nil {
 			return nil, err
 		}
+	}
+	root, err := t.loadRoot(txn)
+	if err != nil {
+		return nil, err
 	}
 	return &Batch{
 		root:    root,
@@ -92,16 +93,13 @@ func (t *Trie) RootHash() ([]byte, error) {
 	return rootHash, err
 }
 
-func (t *Trie) loadRoot() (internal.Node, error) {
+func (t *Trie) loadRoot(txn api.KvStorageTransaction) (internal.Node, error) {
 	var root internal.Node = nil
-	txn, err := t.kv.Transaction()
-	defer txn.Abort()
-	if err != nil {
-		return nil, err
-	}
 	rootHash, err := txn.Get(t.rootKey)
 	if err != nil {
-		return nil, err
+		if err.Error() != KeyNotFound.Error() {
+			return nil, err
+		}
 	}
 	if len(rootHash) > 0 {
 		r := internal.HashNode(rootHash)

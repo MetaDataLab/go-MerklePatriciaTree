@@ -1,5 +1,7 @@
 package api
 
+import "errors"
+
 type (
 	KvStorageOperation interface {
 		Put(key, val []byte) error
@@ -15,3 +17,5 @@ type (
 		Transaction() (KvStorageTransaction, error)
 	}
 )
+
+var NotFound = errors.New("key not found")
