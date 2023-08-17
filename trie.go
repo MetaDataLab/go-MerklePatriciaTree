@@ -13,12 +13,12 @@ var KeyNotFound = errors.New("key not found")
 type HasherFactory func() hash.Hash
 
 type Trie struct {
-	kv      internal.KvStorage
+	kv      internal.TransactionalKvStorage
 	hFac    HasherFactory
 	rootKey []byte
 }
 
-func New(hf HasherFactory, kv internal.KvStorage, rootKey []byte) *Trie {
+func New(hf HasherFactory, kv internal.TransactionalKvStorage, rootKey []byte) *Trie {
 	return &Trie{
 		kv:      kv,
 		hFac:    hf,
@@ -26,16 +26,31 @@ func New(hf HasherFactory, kv internal.KvStorage, rootKey []byte) *Trie {
 	}
 }
 
-func (t *Trie) Batch() *Batch {
-	return &Batch{
-		root: t.loadRoot(),
-		Trie: t,
+func (t *Trie) Batch(txn internal.KvStorageTransaction) (*Batch, error) {
+	root, err := t.loadRoot()
+	if err != nil {
+		return nil, err
 	}
+	if txn == nil {
+		txn, err = t.kv.Transaction()
+		if err != nil {
+			return nil, err
+		}
+	}
+	return &Batch{
+		root:    root,
+		rootKey: t.rootKey,
+		hFac:    t.hFac,
+		kv:      txn,
+	}, nil
 }
 
 func (t *Trie) Delete(key []byte) error {
-	batch := t.Batch()
-	err := batch.Delete(key)
+	batch, err := t.Batch(nil)
+	if err != nil {
+		return err
+	}
+	err = batch.Delete(key)
 	if err != nil {
 		return err
 	}
@@ -43,31 +58,50 @@ func (t *Trie) Delete(key []byte) error {
 }
 
 func (t *Trie) Get(key []byte) ([]byte, error) {
-	batch := t.Batch()
+	batch, err := t.Batch(nil)
+	if err != nil {
+		return nil, err
+	}
 	data, err := batch.Get(key)
 	if err != nil {
 		return nil, err
 	}
-	return data, nil
+	return data, batch.Abort()
 }
 
 func (t *Trie) Put(key, value []byte) error {
-	batch := t.Batch()
-	err := batch.Put(key, value)
+	batch, err := t.Batch(nil)
+	if err != nil {
+		return err
+	}
+	err = batch.Put(key, value)
 	if err != nil {
 		return err
 	}
 	return batch.Commit()
 }
 
-func (t *Trie) RootHash() []byte {
-	rootHash, _ := t.kv.Get(t.rootKey)
-	return rootHash
+func (t *Trie) RootHash() ([]byte, error) {
+	txn, err := t.kv.Transaction()
+	if err != nil {
+		return nil, err
+	}
+	rootHash, err := txn.Get(t.rootKey)
+	defer txn.Abort()
+	return rootHash, err
 }
 
-func (t *Trie) loadRoot() internal.Node {
+func (t *Trie) loadRoot() (internal.Node, error) {
 	var root internal.Node = nil
-	rootHash, _ := t.kv.Get(t.rootKey)
+	txn, err := t.kv.Transaction()
+	defer txn.Abort()
+	if err != nil {
+		return nil, err
+	}
+	rootHash, err := txn.Get(t.rootKey)
+	if err != nil {
+		return nil, err
+	}
 	if len(rootHash) > 0 {
 		r := internal.HashNode(rootHash)
 		root = &r
@@ -75,13 +109,17 @@ func (t *Trie) loadRoot() internal.Node {
 	if root != nil {
 		root.Serialize(t.hFac())
 	}
-	return root
+	return root, nil
 }
 
 func (t *Trie) persist(node internal.Node, persistTrie *pb.PersistTrie) (internal.Node, error) {
 	if node != nil {
 		if n, ok := node.(*internal.HashNode); ok {
-			data, err := t.kv.Get([]byte(*n))
+			txn, err := t.kv.Transaction()
+			if err != nil {
+				return nil, err
+			}
+			data, err := txn.Get([]byte(*n))
 			if err != nil {
 				return node, err
 			}

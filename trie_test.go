@@ -5,21 +5,40 @@ import (
 	"crypto"
 	"errors"
 	"testing"
+
+	"github.com/MetaDataLab/go-MerklePatriciaTree/internal"
 )
 
 type MapKv struct {
 	kv map[string][]byte
 }
 
-func (m *MapKv) Put(key, val []byte) error {
-	m.kv[string(key)] = val
+func (m *MapKv) Transaction() (internal.KvStorageTransaction, error) {
+	return &MapKvTransaction{
+		mapkv: m,
+	}, nil
+}
+
+type MapKvTransaction struct {
+	mapkv *MapKv
+}
+
+func (m *MapKvTransaction) Put(key, val []byte) error {
+	m.mapkv.kv[string(key)] = val
 	return nil
 }
-func (m *MapKv) Get(key []byte) ([]byte, error) {
-	return m.kv[string(key)], nil
+func (m *MapKvTransaction) Get(key []byte) ([]byte, error) {
+	return m.mapkv.kv[string(key)], nil
 }
-func (m *MapKv) Delete(key []byte) error {
-	delete(m.kv, string(key))
+func (m *MapKvTransaction) Delete(key []byte) error {
+	delete(m.mapkv.kv, string(key))
+	return nil
+}
+
+func (m *MapKvTransaction) Abort() error {
+	return nil
+}
+func (m *MapKvTransaction) Commit() error {
 	return nil
 }
 
@@ -40,7 +59,7 @@ func TestTriePutGetUpdate(t *testing.T) {
 		[]byte("test_root"),
 	)
 	var err error
-	txn := testingTrie.Batch()
+	txn, _ := testingTrie.Batch(nil)
 	for k, v := range testCases {
 		err = txn.Put([]byte(k), v)
 		if err != nil {
@@ -90,7 +109,7 @@ func TestTriePutGetUpdate(t *testing.T) {
 		[]byte("test_root"),
 	)
 	testCases["test1_key"] = []byte("test1_value2")
-	txn = testingTrie3.Batch()
+	txn, _ = testingTrie3.Batch(nil)
 	for k, v := range testCases {
 		err = txn.Put([]byte(k), v)
 		if err != nil {
@@ -126,7 +145,7 @@ func TestTriePutDelete(t *testing.T) {
 		[]byte("test_root"),
 	)
 	var err error
-	txn := testingTrie.Batch()
+	txn, _ := testingTrie.Batch(nil)
 	for k, v := range testCases {
 		err = txn.Put([]byte(k), v)
 		if err != nil {

@@ -40,7 +40,7 @@ func (sn *ShortNode) Hash(cs hash.Hash) []byte {
 	return sn.Cache
 }
 
-func (sn *ShortNode) Save(kv KvStorage, cs hash.Hash) error {
+func (sn *ShortNode) Save(kv KvStorageTransaction, cs hash.Hash) error {
 	if sn.Status == DELETED {
 		return kv.Delete(sn.OriginalKey)
 	}

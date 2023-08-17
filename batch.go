@@ -5,22 +5,28 @@ import (
 )
 
 type Batch struct {
-	root internal.Node
-	*Trie
-	toDel [][]byte
+	root    internal.Node
+	toDel   [][]byte
+	kv      internal.KvStorageTransaction
+	rootKey []byte
+	hFac    HasherFactory
+}
+
+func (t *Batch) Abort() error {
+	return t.kv.Abort()
 }
 
 // the batch should not be used after committed
 func (t *Batch) Commit() error {
 	if t.root == nil {
-		err := t.kv.Delete(t.rootKey)
+		err := t.Delete(t.rootKey)
 		if err != nil {
 			return err
 		}
 		return nil
 	}
 	for _, key := range t.toDel {
-		t.kv.Delete(key)
+		t.Delete(key)
 	}
 	t.commit(t.root)
 	h := t.root.CachedHash()
@@ -29,8 +35,8 @@ func (t *Batch) Commit() error {
 	if err != nil {
 		return err
 	}
+	return t.kv.Commit()
 
-	return nil
 }
 
 func (t *Batch) commit(node internal.Node) {

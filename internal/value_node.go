@@ -39,7 +39,7 @@ func (vn *ValueNode) Hash(cs hash.Hash) []byte {
 	return vn.Cache
 }
 
-func (vn *ValueNode) Save(kv KvStorage, cs hash.Hash) error {
+func (vn *ValueNode) Save(kv KvStorageTransaction, cs hash.Hash) error {
 	data, err := vn.Serialize(cs)
 	if err != nil {
 		return err
