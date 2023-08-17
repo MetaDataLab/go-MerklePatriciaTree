@@ -3,7 +3,6 @@ package mpt
 import (
 	"errors"
 	"hash"
-	"sync"
 
 	"github.com/MetaDataLab/go-MerklePatriciaTree/internal"
 	"github.com/MetaDataLab/go-MerklePatriciaTree/pb"
@@ -17,8 +16,6 @@ type Trie struct {
 	kv      internal.KvStorage
 	hFac    HasherFactory
 	rootKey []byte
-
-	sync.RWMutex
 }
 
 func New(hf HasherFactory, kv internal.KvStorage, rootKey []byte) *Trie {

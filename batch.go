@@ -12,8 +12,6 @@ type Batch struct {
 
 // the batch should not be used after committed
 func (t *Batch) Commit() error {
-	t.Lock()
-	defer t.Unlock()
 	if t.root == nil {
 		err := t.kv.Delete(t.rootKey)
 		if err != nil {
